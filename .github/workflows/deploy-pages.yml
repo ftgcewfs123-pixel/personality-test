@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pages: write
 
 concurrency:
   group: pages
@@ -34,3 +35,35 @@ jobs:
           git add -A
           git commit -m "部署生活氛围人格测试"
           git push --force "https://x-access-token:${GITHUB_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" HEAD:gh-pages
+
+      - name: 尝试开启 GitHub Pages（来源为 gh-pages 根目录）
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set +e
+          AUTH="Authorization: Bearer ${GITHUB_TOKEN}"
+          ACCEPT="Accept: application/vnd.github+json"
+          CODE=$(curl -sS -o /tmp/pages.json -w "%{http_code}" \
+            -H "$AUTH" -H "$ACCEPT" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages")
+          echo "查询 Pages 状态: ${CODE}"
+          if [ "$CODE" = "200" ]; then
+            exit 0
+          fi
+          CODE=$(curl -sS -o /tmp/pages-create.json -w "%{http_code}" \
+            -X POST \
+            -H "$AUTH" -H "$ACCEPT" \
+            -H "Content-Type: application/json" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/pages" \
+            -d '{"build_type":"legacy","source":{"branch":"gh-pages","path":"/"}}')
+          echo "创建 Pages 站点: ${CODE}"
+          python3 - << 'PY'
+          import json
+          for name in ("/tmp/pages.json", "/tmp/pages-create.json"):
+              try:
+                  data = json.load(open(name))
+              except Exception:
+                  continue
+              print(name, {k: data.get(k) for k in ("message", "html_url", "status", "build_type")})
+          PY
+          exit 0
